@@ -65,6 +65,7 @@ atsc_equalizer_long_impl::atsc_equalizer_long_impl()
     init_field_sync_common(training_sequence2, 1);
 
     d_taps.resize(NTAPS, 0.0f);
+    d_taps[NPRETAPS] = 1.0f; // delta-function init — equalizer starts as pass-through
 
     const int alignment_multiple = volk_get_alignment() / sizeof(float);
     set_alignment(std::max(1, alignment_multiple));
