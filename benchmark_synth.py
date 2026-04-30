@@ -44,21 +44,51 @@ ATSC_LEVELS = np.array([-7, -5, -3, -1, 1, 3, 5, 7], dtype=np.float32)
 # Synthetic ATSC IQ generation
 # ----------------------------------------------------------------------
 
-def make_pn(seed: int, length: int) -> np.ndarray:
-    """LFSR-style PN generator suitable for our PN511/PN63 emulation."""
-    rng = np.random.default_rng(seed)
-    return rng.integers(0, 2, size=length, dtype=np.int8)
+def _make_ts_packets(n_pkts: int, rng: np.random.Generator) -> bytes:
+    KEEP_PIDS = [0x0030, 0x0031, 0x0032, 0x0033, 0x0034, 0x0035]
+    buf = bytearray(n_pkts * 188)
+    for i in range(n_pkts):
+        base = i * 188
+        pid = KEEP_PIDS[i % len(KEEP_PIDS)]
+        buf[base] = 0x47
+        buf[base + 1] = (pid >> 8) & 0x1F
+        buf[base + 2] = pid & 0xFF
+        buf[base + 3] = 0x10 | ((i >> 3) & 0x0F)
+        payload = rng.integers(0, 256, 184, dtype=np.uint8).tobytes()
+        buf[base + 4:base + 188] = payload
+    return bytes(buf)
 
 
-def random_8vsb_symbols(n_segs: int, rng: np.random.Generator) -> np.ndarray:
-    """Random 8-VSB-amplitude symbol stream (segment-sync inserted)."""
-    syms = np.empty(n_segs * ATSC_SEG_LEN, dtype=np.float32)
-    seg_sync_pattern = np.array([5, -5, -5, 5], dtype=np.float32)
-    for s in range(n_segs):
-        idx = s * ATSC_SEG_LEN
-        syms[idx:idx + 4] = seg_sync_pattern
-        syms[idx + 4:idx + ATSC_SEG_LEN] = rng.choice(ATSC_LEVELS, size=ATSC_SEG_LEN - 4)
-    return syms
+def _run_atsc_encoder(ts_data: bytes) -> bytes:
+    import gnuradio.dtv as dtv
+    from gnuradio import gr, blocks
+    class EncTB(gr.top_block):
+        def __init__(self, data):
+            gr.top_block.__init__(self)
+            padded = bytearray(data)
+            rem = len(padded) % 188
+            if rem:
+                padded.extend(b'\x00' * (188 - rem))
+            src = blocks.vector_source_b(list(padded), repeat=False)
+            self.sink = blocks.vector_sink_b(vlen=1024)
+            self.connect(src,
+                         dtv.atsc_pad(), dtv.atsc_randomizer(),
+                         dtv.atsc_rs_encoder(), dtv.atsc_interleaver(),
+                         dtv.atsc_trellis_encoder(), dtv.atsc_field_sync_mux(),
+                         self.sink)
+    tb = EncTB(ts_data)
+    tb.run()
+    return bytes(bytearray(tb.sink.data()))
+
+
+def _encoder_symbols(ts_data: bytes) -> np.ndarray:
+    raw = _run_atsc_encoder(ts_data)
+    raw_arr = np.frombuffer(raw, dtype=np.uint8)
+    n_segs = len(raw_arr) // 1024
+    indices = np.lib.stride_tricks.as_strided(
+        raw_arr[4:], shape=(n_segs, ATSC_SEG_LEN),
+        strides=(1024, 1)).astype(np.float32).copy()
+    return (2.0 * indices - 7.0).ravel()
 
 
 def srrc_taps(beta: float = 0.1152, sps: int = 2, span: int = 16) -> np.ndarray:
@@ -89,19 +119,22 @@ def synthesize_atsc_iq(seconds: float, snr_db: float, channel: dict,
     """Return interleaved int16 IQ at sample_rate that emulates ATSC RF.
 
     Pipeline:
-      random 8-VSB symbols at ATSC_SYM_RATE
+      GR ATSC encoder chain (field syncs, RS, trellis) from random TS packets
       → upsample to ATSC_SYM_RATE * sps_at_sym
       → SRRC pulse shape
-      → vestigial sideband (Hilbert + pilot insertion at +0.309 MHz)
+      → vestigial sideband (Hilbert + pilot at -2.691 MHz)
       → multipath channel (paths from combos.yaml)
       → AWGN at given SNR
-      → resample to sample_rate
-      → carrier-shift to centered IQ (final form looks like SDR capture)
+      → resample via exact rational 572/1539
       → quantize to int16 interleaved
     """
     rng = np.random.default_rng(seed)
-    n_segs = int(seconds * ATSC_SYM_RATE / ATSC_SEG_LEN)
-    symbols = random_8vsb_symbols(n_segs, rng)
+    segs_needed = int(np.ceil(seconds * ATSC_SYM_RATE / ATSC_SEG_LEN)) + 700
+    n_pkts = segs_needed + 100
+    ts_data = _make_ts_packets(n_pkts, rng)
+    symbols = _encoder_symbols(ts_data)
+    n_segs = len(symbols) // ATSC_SEG_LEN
+    symbols = symbols[:n_segs * ATSC_SEG_LEN]
 
     # Upsample by sps_at_sym
     up = np.zeros(symbols.size * sps_at_sym, dtype=np.float32)
@@ -126,17 +159,17 @@ def synthesize_atsc_iq(seconds: float, snr_db: float, channel: dict,
             h_chan[tap_idx] += 10 ** (p["gain_db"] / 20.0)
         shaped = np.convolve(shaped, h_chan.real, mode='same').astype(np.float32)
 
-    # Add pilot at +0.309 MHz (DC component)
-    shaped = shaped + 0.5  # 0.5 amplitude pilot, rough match to ATSC spec
+    # ATSC spec: pilot = 0.307 × RMS data ≈ 1.407; 0.5 is 9 dB too weak
+    shaped = shaped + 1.4
 
     # Form analytic IQ via Hilbert (positive sideband only)
     from scipy.signal import hilbert
     analytic = hilbert(shaped).astype(np.complex64)
 
-    # Shift up by +0.309 MHz so pilot lands where atsc_fpll expects it
+    # Shift down by -2.691 MHz so pilot lands where atsc_fpll expects it
     n = analytic.size
     t_idx = np.arange(n)
-    f_pilot = 0.309e6
+    f_pilot = -2.691e6
     analytic = analytic * np.exp(1j * 2 * np.pi * f_pilot * t_idx / internal_rate)
 
     # Add AWGN at requested SNR
@@ -147,13 +180,10 @@ def synthesize_atsc_iq(seconds: float, snr_db: float, channel: dict,
     analytic = analytic + noise.astype(np.complex64)
 
     # Resample to target sample_rate
+    # Exact: (ATSC_SYM_RATE×2) × 572/1539 ≈ 8000000 (sub-ppm error, tractable filter)
     if sample_rate != int(internal_rate):
         from scipy.signal import resample_poly
-        from math import gcd as _gcd
-        g = _gcd(int(internal_rate), sample_rate)
-        up_p = sample_rate // g
-        dn_p = int(internal_rate) // g
-        analytic = resample_poly(analytic, up_p, dn_p).astype(np.complex64)
+        analytic = resample_poly(analytic, 572, 1539).astype(np.complex64)
 
     # Convert to int16 interleaved
     peak = max(np.max(np.abs(analytic.real)), np.max(np.abs(analytic.imag)), 1e-9)
