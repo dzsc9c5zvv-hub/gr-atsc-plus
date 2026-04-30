@@ -1,0 +1,185 @@
+# Configuration matrix for the synthetic-bench sweep.
+# Each combo names which forked blocks to use and their parameters.
+# Used by benchmark_synth.py and run_combo.py.
+
+combos:
+  - name: stock
+    description: gr-dtv stock pipeline (baseline)
+    fpll: stock
+    sync: stock
+    eq: stock
+    viterbi: stock
+
+  - name: long_eq
+    description: 256-tap DD-LMS equalizer only
+    fpll: stock
+    sync: stock
+    eq: long
+    viterbi: stock
+
+  - name: soft_vit
+    description: L2-metric soft Viterbi only
+    fpll: stock
+    sync: stock
+    eq: stock
+    viterbi: soft
+
+  - name: long_eq_soft_vit
+    description: 256-tap eq + soft Viterbi
+    fpll: stock
+    sync: stock
+    eq: long
+    viterbi: soft
+
+  - name: tight_fpll
+    description: tight FPLL alpha=0.003 tau=20us only
+    fpll: tight
+    fpll_alpha: 0.003
+    fpll_afc_tau_us: 20.0
+    sync: stock
+    eq: stock
+    viterbi: stock
+
+  - name: very_tight_fpll
+    description: extra-tight FPLL alpha=0.001 tau=50us
+    fpll: tight
+    fpll_alpha: 0.001
+    fpll_afc_tau_us: 50.0
+    sync: stock
+    eq: stock
+    viterbi: stock
+
+  - name: hysteresis_sync
+    description: relaxed sync lock=3 unlock=1, no force-emit
+    fpll: stock
+    sync: tunable
+    sync_min_lock: 3
+    sync_unlock: 1
+    sync_emit_unlocked: false
+    eq: stock
+    viterbi: stock
+
+  - name: force_emit_sync
+    description: relaxed sync + force-emit
+    fpll: stock
+    sync: tunable
+    sync_min_lock: 3
+    sync_unlock: 1
+    sync_emit_unlocked: true
+    eq: stock
+    viterbi: stock
+
+  - name: max_relax_sync
+    description: max-relax sync lock=1 unlock=1 force-emit
+    fpll: stock
+    sync: tunable
+    sync_min_lock: 1
+    sync_unlock: 1
+    sync_emit_unlocked: true
+    eq: stock
+    viterbi: stock
+
+  # Combinations
+  - name: tight_fpll_long_eq
+    description: tight FPLL + 256-tap eq
+    fpll: tight
+    fpll_alpha: 0.003
+    fpll_afc_tau_us: 20.0
+    sync: stock
+    eq: long
+    viterbi: stock
+
+  - name: tight_fpll_soft_vit
+    description: tight FPLL + soft Viterbi
+    fpll: tight
+    fpll_alpha: 0.003
+    fpll_afc_tau_us: 20.0
+    sync: stock
+    eq: stock
+    viterbi: soft
+
+  - name: hysteresis_long_eq
+    description: hysteresis sync + 256-tap eq
+    fpll: stock
+    sync: tunable
+    sync_min_lock: 3
+    sync_unlock: 1
+    sync_emit_unlocked: false
+    eq: long
+    viterbi: stock
+
+  - name: hysteresis_long_eq_soft_vit
+    description: hysteresis sync + 256-tap eq + soft Viterbi
+    fpll: stock
+    sync: tunable
+    sync_min_lock: 3
+    sync_unlock: 1
+    sync_emit_unlocked: false
+    eq: long
+    viterbi: soft
+
+  - name: tight_fpll_hysteresis
+    description: tight FPLL + hysteresis sync
+    fpll: tight
+    fpll_alpha: 0.003
+    fpll_afc_tau_us: 20.0
+    sync: tunable
+    sync_min_lock: 3
+    sync_unlock: 1
+    sync_emit_unlocked: false
+    eq: stock
+    viterbi: stock
+
+  - name: full_stack
+    description: tight FPLL + hysteresis sync + 256-tap eq + soft Viterbi
+    fpll: tight
+    fpll_alpha: 0.003
+    fpll_afc_tau_us: 20.0
+    sync: tunable
+    sync_min_lock: 3
+    sync_unlock: 1
+    sync_emit_unlocked: false
+    eq: long
+    viterbi: soft
+
+  - name: full_stack_force_emit
+    description: full stack but with force-emit sync
+    fpll: tight
+    fpll_alpha: 0.003
+    fpll_afc_tau_us: 20.0
+    sync: tunable
+    sync_min_lock: 3
+    sync_unlock: 1
+    sync_emit_unlocked: true
+    eq: long
+    viterbi: soft
+
+# SNR levels to sweep against synthetic ATSC signals.
+snr_db: [10, 12, 14, 16, 18, 20, 25]
+
+# Synthetic-channel options (multipath profiles).
+channels:
+  - name: awgn
+    description: AWGN only, no multipath
+    paths: []
+  - name: brazil_a
+    description: Brazil A multipath profile (light)
+    paths:
+      - {delay_us: 0.15, gain_db: -13.8, doppler_hz: 0}
+      - {delay_us: 2.22, gain_db: -16.2, doppler_hz: 0}
+      - {delay_us: 5.05, gain_db: -14.9, doppler_hz: 0}
+      - {delay_us: 9.05, gain_db: -13.6, doppler_hz: 0}
+      - {delay_us: 12.4, gain_db: -16.4, doppler_hz: 0}
+  - name: brazil_b
+    description: Brazil B multipath profile (heavy, single ghost)
+    paths:
+      - {delay_us: 0.30, gain_db: -12.0, doppler_hz: 0}
+      - {delay_us: 3.50, gain_db: -4.0,  doppler_hz: 0}
+      - {delay_us: 4.40, gain_db: -7.0,  doppler_hz: 0}
+      - {delay_us: 9.50, gain_db: -15.0, doppler_hz: 0}
+      - {delay_us: 12.7, gain_db: -22.0, doppler_hz: 0}
+
+# Threshold for declaring "improvement vs stock".
+improvement_threshold:
+  rs_clean_delta: 0.10  # combo must beat stock RS-clean by 10% absolute
+  snr_db_max: 14        # at SNR <= 14 dB (stock breakdown region)
