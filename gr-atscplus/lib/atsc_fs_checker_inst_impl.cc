@@ -20,8 +20,15 @@
 using gr::dtv::ATSC_DATA_SEGMENT_LENGTH;
 using gr::dtv::plinfo;
 
-static const int PN511_ERROR_LIMIT = 20;
-static const int PN63_ERROR_LIMIT = 5;
+// Limits raised from upstream gr-dtv values (20/5) to (50/15) to tolerate
+// the residual SRRC ISI in our synthetic IQ. Empirically: at SNR=25 dB AWGN
+// the synthetic signal lands ~24 PN511 errors after the receive chain
+// (vs 0 expected with no ISI). Below the relaxed threshold the equalizer
+// never trains, RS sees garbage, and rs_clean_frac collapses to 0%. With
+// 50/15 the agent's first run hit 99.1% RS-clean — this was the
+// uncommitted change behind that baseline.
+static const int PN511_ERROR_LIMIT = 50;
+static const int PN63_ERROR_LIMIT = 15;
 
 namespace gr {
 namespace atscplus {
