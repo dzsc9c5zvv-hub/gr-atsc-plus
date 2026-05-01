@@ -1,66 +1,94 @@
 # gr-atsc-plus
 
 Open-source software ATSC 1.0 receiver, forked from GNU Radio's `gr-dtv`
-with experimental extensions:
+with experimental extensions and an empirically-tuned RF capture recipe.
 
-- `atsc_equalizer_long` — 256-tap DD-LMS equalizer (vs stock 64-tap)
-- `atsc_viterbi_soft` — soft-decision Viterbi with L2-squared branch metrics
-- `atsc_fs_checker_inst` — instrumented field-sync checker (PN511/PN63 histograms)
-- `atsc_sync_tunable` — segment-sync block with parameterized lock thresholds + hysteresis
-- `atsc_fpll_tight` — frequency PLL with tunable loop alpha and AFC time constant
+> **2026-05-01 milestone:** software decode of WRC NBC HD (RF 34) at
+> visual quality matching HDHomeRun on the same RF moment, using SDRplay
+> RSPdx + Antenna A + the proven gain settings + the `fpll_a002_tau20`
+> combo. **62.2% RS-clean, ~1100 HD frames + 1100 SD frames per 60 sec
+> capture.** See [`docs/proven_capture_recipe.md`](docs/proven_capture_recipe.md)
+> and [`results/2026-05-01-real-rf34-29combos.md`](results/2026-05-01-real-rf34-29combos.md).
 
-Status: **algorithmic ceiling reached on real-RF discone capture (0.3% RS-clean,
-0/199 HD frames)**. Empirical conclusion: signal SNR is below what the equalizer
-can fix, regardless of FPLL/sync tuning. See `docs/findings.md`.
+## Quick start (the actual working recipe)
+
+```powershell
+# Capture (Windows, requires PothosSDR + SDRplay RSPdx + a horizontal TV antenna)
+& "C:\Program Files\PothosSDR\bin\rx_sdr.exe" -d "driver=sdrplay" `
+  -a "Antenna A" -f 593000000 -s 8000000 `
+  -g "IFGR=59" -t "rfgain_sel=5" `
+  -F CS16 -n 480000000 capture.cs16
+```
+
+```bash
+# Decode (Linux/WSL, after ./bootstrap.sh)
+python3 run_combo.py capture.cs16 out.ts fpll_a002_tau20
+python3 ts_tei_scrub.py out.ts out_clean.ts
+vlc out_clean.ts
+```
+
+The two non-obvious capture values (`rfgain_sel=5`, `IFGR=59`) make the
+difference between 100% TEI=1 (ADC saturation, signal looks dead) and
+60%+ RS-clean watchable TV.
+
+## Forked blocks
+
+| Block | Status | Notes |
+|---|---|---|
+| `atsc_fpll_tight` | ✓ working, +2pp wins | Parameterized alpha + AFC tau. Best params: alpha=0.002, tau=20µs |
+| `atsc_viterbi_soft` | ✓ working, neutral-positive | Soft-decision Viterbi; small win on top of tight FPLL |
+| `atsc_sync_tunable` | ✓ working, neutral | Lock thresholds + hysteresis; tied stock on the test capture |
+| `atsc_fs_checker_inst` | ✓ working | Instrumented (PN511/PN63 histograms to stderr) |
+| `atsc_equalizer_long` | ✗ **broken**, 0.3% RS-clean | 256-tap DD-LMS, regression of unknown cause; do not use |
+
+`combos.yaml` defines 29 named combos (stock baseline + 28 forks). The
+2026-05-01 sweep against a real RF 34 capture produced this leaderboard:
+
+| Rank | HD frames | SD frames | Clean% | Combo |
+|---|---|---|---|---|
+| 1 | 1113 | 1094 | 62.2% | **fpll_a002_tau20** |
+| 2 | 1112 | 1094 | 62.2% | fpll_soft_a003_tau10 |
+| 3 | 1111 | 1094 | 62.1% | tight_fpll_soft_vit |
+| ... | | | | |
+| stock | 1083 | 1077 | 60.8% | gr-dtv baseline |
 
 ## Build
 
-Requires Linux with `gnuradio` (3.10+), `gr-dtv`, `libvolk`, `pybind11`, `cmake`.
+Requires Linux (Ubuntu 24.04 tested) with `gnuradio` (3.10.9+),
+`gr-dtv`, `libvolk`, `pybind11`, `cmake`. Use Python 3.12.
 
 ```bash
 ./bootstrap.sh
 ```
 
-Installs prerequisites if missing, builds the OOT module under
-`gr-atscplus/build/`, installs to `/usr/local`, and verifies the Python
-binding by listing the registered blocks.
+Installs missing prerequisites, builds the OOT module under
+`gr-atscplus/build/`, installs to `/usr/local`, verifies the Python
+binding lists all 5 forked blocks.
 
-## Run
+## Regression sweep
 
-### Decode a single CS16 capture with a named combo
-
-```bash
-python3 run_combo.py input.cs16 output.ts full_stack
-```
-
-`combos.yaml` defines all available combos (16 by default). Each names which
-forked blocks to use and their parameters. Add new combos by appending to the
-list in `combos.yaml`; no Python edits needed.
-
-### Synthetic benchmark sweep
+After any C++ change to a forked block, run the local sweep against
+your captured IQ to make sure stock didn't regress and check whether
+your change actually helps:
 
 ```bash
-python3 benchmark_synth.py
+bash scripts/run_local_sweep.sh /path/to/capture.cs16
 ```
 
-Generates AWGN + multipath ATSC IQ at multiple SNR levels, runs every combo
-on every (channel, SNR) pair, and writes a Markdown scoreboard to
-`results/<date>.md`.
-
-A weekly remote agent runs this sweep on every push to `main` and commits
-the results back. See `.github/workflows/synth_bench.yml` (TODO).
+Outputs RS-clean %, SD frames, HD frames per combo and a sorted
+leaderboard. ~15 minutes for all 29 combos on a 60-sec capture.
 
 ## Repo layout
 
 ```
-gr-atscplus/        forked OOT module (the actual C++ blocks)
-decoders/           v6-v9 demonstration decoder scripts (locked to specific combos)
-scripts/            apply_*.sh — patch scripts that fork from upstream gr-dtv
-combos.yaml         configuration matrix (combo name → which blocks)
+gr-atscplus/        forked OOT module (5 C++ blocks)
+combos.yaml         29 named combo configurations
 run_combo.py        parameterized single-decode runner
-benchmark_synth.py  synthetic IQ generator + combo sweep + scorecard writer
+benchmark_synth.py  synthetic IQ generator + combo sweep (currently broken — synth IQ produces 0% on stock too; investigation pending)
+scripts/run_local_sweep.sh  real-IQ regression sweep with SD/HD frame counts
+docs/               capture recipe + findings
+results/            scoreboard outputs by date
 bootstrap.sh        Linux setup + build + install
-results/            scoreboard output (gitignored except .gitkeep)
 ```
 
 ## License
