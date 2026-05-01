@@ -1,9 +1,15 @@
 # Proven RF capture recipe for ATSC decode
 
-Empirically validated on a Windows 11 + SDRplay RSPdx + attic TV antenna
-+ inline amplifier setup. Decoding through gr-dtv 3.10.9.2 + this fork's
-gr-atscplus blocks gives **~60% RS-clean** on UHF channels with these
-exact settings.
+Empirically validated on Windows 11 + SDRplay RSPdx + a horizontally-
+polarized rooftop TV antenna with a powered amplifier in the line.
+Decoding through gr-dtv 3.10.9.2 + this fork's gr-atscplus blocks
+gives **~60% RS-clean** on a strong UHF channel with these exact
+settings.
+
+The example commands below tune to **593 MHz** (RF channel 34 in the
+North American UHF lineup). **Replace this frequency with the channel
+of a strong station in your area.** Find one via `tvfool.com`,
+`rabbitears.info`, or the FCC ATSC database.
 
 ## Capture command (Windows PowerShell)
 
@@ -19,6 +25,8 @@ exact settings.
   capture.cs16
 ```
 
+Linux equivalent — same flags, just `rx_sdr` instead of `"...\\rx_sdr.exe"`.
+
 The two non-obvious values are:
 
 | Setting | Value | Why |
@@ -32,14 +40,14 @@ The two non-obvious values are:
 | Setting | Wrong value | Symptom |
 |---|---|---|
 | `-t rfgain_sel=3` | LNA mostly enabled | 100% TEI=1, signal saturates ADC |
-| `-t rfgain_sel=0` | All LNAs on | 4 RS-clean packets (clipping) |
-| `-g 30` | Aggregate gain 30 | Carrier locks but 70% of segments fail RS |
+| `-t rfgain_sel=0` | All LNAs on | Few RS-clean packets (clipping) |
+| `-g 30` | Aggregate gain 30 | Carrier locks but ~70% of segments fail RS |
 | `-s 6250000` | 6.25 MS/s | Driver internally resamples, introduces aliased noise |
 
 ## Decode pipeline
 
 ```
-rx_sdr.exe → CS16 file → file_source(short)
+rx_sdr → CS16 file → file_source(short)
   → interleaved_short_to_complex
   → rational_resampler_ccc(25/32)   # 8 MS/s → 6.25 MS/s
   → atsc_rx(6.25e6, sps=1.5)        # gr-dtv stock pipeline
@@ -50,12 +58,23 @@ rx_sdr.exe → CS16 file → file_source(short)
 `run_combo.py` in this repo wraps the gr-dtv pipeline. After capture:
 
 ```bash
-python3.12 run_combo.py capture.cs16 /tmp/out.ts stock
+python3 run_combo.py capture.cs16 /tmp/out.ts fpll_a002_tau20
+python3 ts_tei_scrub.py /tmp/out.ts /tmp/out_clean.ts
+vlc /tmp/out_clean.ts
 ```
 
 ## Time-of-day note
 
-Signal quality varies hour-to-hour. At 21:00–22:00 ET we've seen 60–66%
-RS-clean on RF 34. After 23:00 it gets flaky — same recipe can drop to
-0% within 30 seconds. Don't iterate on RF tests after 23:00 local; the
-results aren't representative.
+Signal quality varies hour-to-hour. We've seen 60-66% RS-clean during
+prime-time evening hours and the same recipe drop to <10% late at
+night within the same session. Don't iterate on RF tests after about
+23:00 local — the results aren't representative of normal viewing
+conditions.
+
+## Antenna polarization is the single biggest variable
+
+ATSC broadcast TV in North America transmits **horizontally polarized**.
+A vertical antenna (SDR-hobby discone, vertical whip) loses 10-15 dB.
+That's enough to drop the signal below FPLL lock threshold even for
+strong stations. Use a horizontal antenna — even a $10 indoor pair of
+rabbit-ears bent flat into a "V" works.

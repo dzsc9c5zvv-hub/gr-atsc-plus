@@ -1,6 +1,6 @@
 #!/bin/bash
 set -e
-SRC=/mnt/c/Users/emane/Documents/SDR_Agent/gr-atsc-plus/_gnuradio_upstream/gr-dtv
+SRC="${GR_DTV_SRC:-/path/to/gnuradio/gr-dtv}"
 DST=$HOME/gr-atscplus
 
 cd $DST

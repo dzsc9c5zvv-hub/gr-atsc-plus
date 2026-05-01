@@ -25,8 +25,9 @@ fi
 IQ="$1"
 SWEEP_DIR=$(mktemp -d)
 ROOT="$(dirname "$(dirname "$(readlink -f "$0")")")"
-SCRUB="$(dirname "$ROOT")/../ts_tei_scrub.py"  # ../../ts_tei_scrub.py from script dir
-[ ! -f "$SCRUB" ] && SCRUB="/mnt/c/Users/emane/Documents/SDR_Agent/ts_tei_scrub.py"
+# ts_tei_scrub.py lives in a companion SDR project — set TS_TEI_SCRUB env var
+# to override, otherwise we'll skip the scrub step and show raw RS-clean only
+SCRUB="${TS_TEI_SCRUB:-$(dirname "$ROOT")/ts_tei_scrub.py}"
 
 echo "=== gr-atsc-plus combo sweep with SD+HD frame counts ==="
 echo "Input: $IQ ($(du -h "$IQ" | cut -f1))"
