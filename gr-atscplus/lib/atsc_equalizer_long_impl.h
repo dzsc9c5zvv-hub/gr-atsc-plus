@@ -22,13 +22,13 @@ class atsc_equalizer_long_impl : public atsc_equalizer_long
 {
 private:
     static constexpr int NTAPS = 256;
-    // NPRETAPS = 0.2 (51 pre-cursor, 205 post-cursor) for typical TV
-    // multipath where reflections arrive AFTER the main signal. The
-    // upstream gr-dtv equalizer uses the same 0.2 ratio. The previous
-    // 0.8 ratio (205 pre-cursor, 51 post-cursor) was empirically broken
-    // on real RF — every combo using this block flatlined at 0.3% RS-clean
-    // (vs stock at 60.8%) on the 2026-05-01 RF 34 capture.
-    static constexpr int NPRETAPS = (int)(NTAPS * 0.2);
+    // BUG: this block produces 0.3% RS-clean on real RF regardless of
+    // NPRETAPS choice (tested 0.2 and 0.8 — both broken on the 2026-05-01
+    // RF 34 capture vs stock's 60.8%). The bug is elsewhere in the impl;
+    // suspect candidates: LMS gradient sign, tap-buffer slide indexing,
+    // or DFE state mishandling. Until fixed, do NOT use any combo routing
+    // through this block. Recommended combo: tight_fpll_soft_vit (62.1%).
+    static constexpr int NPRETAPS = (int)(NTAPS * 0.8);
 
     // DFE (decision-feedback) settings — ported from atsc_decoder.py
     static constexpr int NDFE = 64;
