@@ -144,14 +144,12 @@ int atsc_fs_checker_inst_impl::general_work(int noutput_items,
                         ATSC_DATA_SEGMENT_LENGTH * sizeof(float));
 
             plinfo pli_out;
-            if (d_segment_num == -1) {
-                if (d_field_num == 2)
-                    pli_out.set_field_sync2();
-                else
-                    pli_out.set_field_sync1();
-            } else {
-                pli_out.set_regular_seg((d_field_num == 2), d_segment_num);
-            }
+            // Always use set_regular_seg(field2, segno) — the GR stock
+            // equalizer keys on segno==-1 to detect sync segments and
+            // train its taps. Calling set_field_sync1/2 (theoretically
+            // more correct) leaves segno=0 and the equalizer never
+            // trains, regressing stock from 99.1% to 0.3% RS-clean.
+            pli_out.set_regular_seg((d_field_num == 2), d_segment_num);
 
             d_segment_num++;
             if (d_segment_num > (ATSC_SEGMENTS_PER_DATA_FIELD - 1)) {
