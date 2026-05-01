@@ -22,13 +22,11 @@ class atsc_equalizer_long_impl : public atsc_equalizer_long
 {
 private:
     static constexpr int NTAPS = 256;
-    // BUG: this block produces 0.3% RS-clean on real RF regardless of
-    // NPRETAPS choice (tested 0.2 and 0.8 — both broken on the 2026-05-01
-    // RF 34 capture vs stock's 60.8%). The bug is elsewhere in the impl;
-    // suspect candidates: LMS gradient sign, tap-buffer slide indexing,
-    // or DFE state mishandling. Until fixed, do NOT use any combo routing
-    // through this block. Recommended combo: tight_fpll_soft_vit (62.1%).
-    static constexpr int NPRETAPS = (int)(NTAPS * 0.8);
+    // Real bug was in general_work — adaptN_dd was re-adapting taps every
+    // data segment with noisy decisions instead of just applying trained
+    // taps. Upstream calls filterN(); we now match. Tap ratio matches
+    // upstream too (51 pre-cursor, 205 post-cursor).
+    static constexpr int NPRETAPS = (int)(NTAPS * 0.2);
 
     // DFE (decision-feedback) settings — ported from atsc_decoder.py
     static constexpr int NDFE = 64;

@@ -154,6 +154,139 @@ combos:
     eq: long
     viterbi: soft
 
+  # --- New combos: FPLL alpha/tau sweep ---
+
+  - name: fpll_a002_tau20
+    description: FPLL alpha=0.002 tau=20us (between stock and tight)
+    fpll: tight
+    fpll_alpha: 0.002
+    fpll_afc_tau_us: 20.0
+    sync: stock
+    eq: stock
+    viterbi: stock
+
+  - name: fpll_a004_tau20
+    description: FPLL alpha=0.004 tau=20us (softer than tight)
+    fpll: tight
+    fpll_alpha: 0.004
+    fpll_afc_tau_us: 20.0
+    sync: stock
+    eq: stock
+    viterbi: stock
+
+  - name: fpll_a005_tau20
+    description: FPLL alpha=0.005 tau=20us
+    fpll: tight
+    fpll_alpha: 0.005
+    fpll_afc_tau_us: 20.0
+    sync: stock
+    eq: stock
+    viterbi: stock
+
+  - name: fpll_a003_tau10
+    description: tight FPLL alpha=0.003 tau=10us (tighter tau)
+    fpll: tight
+    fpll_alpha: 0.003
+    fpll_afc_tau_us: 10.0
+    sync: stock
+    eq: stock
+    viterbi: stock
+
+  - name: fpll_a003_tau40
+    description: tight FPLL alpha=0.003 tau=40us (looser tau)
+    fpll: tight
+    fpll_alpha: 0.003
+    fpll_afc_tau_us: 40.0
+    sync: stock
+    eq: stock
+    viterbi: stock
+
+  - name: fpll_a002_tau40
+    description: FPLL alpha=0.002 tau=40us
+    fpll: tight
+    fpll_alpha: 0.002
+    fpll_afc_tau_us: 40.0
+    sync: stock
+    eq: stock
+    viterbi: stock
+
+  # --- New combos: soft Viterbi + FPLL sweep ---
+
+  - name: fpll_soft_a004_tau20
+    description: FPLL alpha=0.004 tau=20us + soft Viterbi
+    fpll: tight
+    fpll_alpha: 0.004
+    fpll_afc_tau_us: 20.0
+    sync: stock
+    eq: stock
+    viterbi: soft
+
+  - name: fpll_soft_a002_tau40
+    description: FPLL alpha=0.002 tau=40us + soft Viterbi
+    fpll: tight
+    fpll_alpha: 0.002
+    fpll_afc_tau_us: 40.0
+    sync: stock
+    eq: stock
+    viterbi: soft
+
+  - name: fpll_soft_a003_tau10
+    description: tight FPLL alpha=0.003 tau=10us + soft Viterbi
+    fpll: tight
+    fpll_alpha: 0.003
+    fpll_afc_tau_us: 10.0
+    sync: stock
+    eq: stock
+    viterbi: soft
+
+  # --- New combos: sync parameter sweep ---
+
+  - name: sync_lock2_unlock1
+    description: tunable sync min_lock=2 unlock=1 (tighter than stock, looser than tight)
+    fpll: stock
+    sync: tunable
+    sync_min_lock: 2
+    sync_unlock: 1
+    sync_emit_unlocked: false
+    eq: stock
+    viterbi: stock
+
+  - name: sync_lock4_unlock4
+    description: tunable sync min_lock=4 unlock=4 (more hysteresis)
+    fpll: stock
+    sync: tunable
+    sync_min_lock: 4
+    sync_unlock: 4
+    sync_emit_unlocked: false
+    eq: stock
+    viterbi: stock
+
+  # --- New combos: tight FPLL stacked with sync variants ---
+
+  - name: tight_fpll_sync_lock2
+    description: tight FPLL + tunable sync min_lock=2 unlock=1
+    fpll: tight
+    fpll_alpha: 0.003
+    fpll_afc_tau_us: 20.0
+    sync: tunable
+    sync_min_lock: 2
+    sync_unlock: 1
+    sync_emit_unlocked: false
+    eq: stock
+    viterbi: stock
+
+  - name: tight_fpll_soft_sync_lock2
+    description: tight FPLL + soft Viterbi + tunable sync min_lock=2 unlock=1
+    fpll: tight
+    fpll_alpha: 0.003
+    fpll_afc_tau_us: 20.0
+    sync: tunable
+    sync_min_lock: 2
+    sync_unlock: 1
+    sync_emit_unlocked: false
+    eq: stock
+    viterbi: soft
+
 # SNR levels to sweep against synthetic ATSC signals.
 snr_db: [10, 12, 14, 16, 18, 20, 25]
 

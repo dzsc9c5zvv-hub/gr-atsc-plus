@@ -236,7 +236,13 @@ int atsc_equalizer_long_impl::general_work(int noutput_items,
                 adaptN(data_mem, training_sequence1, data_mem2, KNOWN_FIELD_SYNC_LENGTH);
             }
         } else {
-            adaptN_dd(data_mem, data_mem2, ATSC_DATA_SEGMENT_LENGTH);
+            // Apply trained taps without further adaptation. Previously called
+            // adaptN_dd() (continuous DD-LMS), which re-adapted taps every data
+            // segment using noisy decisions and drove convergence to the wrong
+            // solution — explaining the 0.3% RS-clean across all long_eq combos
+            // on the 2026-05-01 RF 34 capture. Upstream gr-dtv calls filterN()
+            // here; we match it. Cloud-agent diagnosed 2026-05-01.
+            filterN(data_mem, data_mem2, ATSC_DATA_SEGMENT_LENGTH);
 
             memcpy(&out[output_produced * ATSC_DATA_SEGMENT_LENGTH],
                    data_mem2,
