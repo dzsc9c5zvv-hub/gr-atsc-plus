@@ -9,6 +9,13 @@ with experimental extensions and an empirically-tuned RF capture recipe.
 > combo. **62.2% RS-clean, ~1100 HD frames + 1100 SD frames per 60 sec
 > capture.** See [`docs/proven_capture_recipe.md`](docs/proven_capture_recipe.md)
 > and [`results/2026-05-01-real-rf34-29combos.md`](results/2026-05-01-real-rf34-29combos.md).
+>
+> **Live streaming also working** — continuous capture-decode-broadcast
+> pipeline serves decoded TS over `tcp://localhost:5559`. VLC with
+> `--demux=ts --network-caching=10000` reads the TCP stream forever,
+> ~30-45 sec lag end-to-end. One-click via desktop shortcut on Windows.
+> See `tv_live_rf34.py` in the SDR_Agent companion repo for the
+> implementation.
 
 ## Quick start (the actual working recipe)
 
