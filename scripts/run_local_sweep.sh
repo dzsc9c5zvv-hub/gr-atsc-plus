@@ -1,16 +1,19 @@
 #!/bin/bash
-# Real-IQ regression sweep — run all 16 combos against a captured ATSC IQ
-# file and print a clean-percent scoreboard sorted by performance.
+# Real-IQ regression sweep — run all combos against a captured ATSC IQ
+# file and print a scoreboard with RS-clean %, SD frames, and HD frames.
 #
 # Usage:
 #   bash scripts/run_local_sweep.sh <path-to-cs16-file>
 #
-# The IQ file should be 8 MS/s CS16 captured per docs/proven_capture_recipe.md.
-# Output: results/<date>-real-rf<N>-local.md plus a console scoreboard.
+# IQ file should be 8 MS/s CS16 captured per docs/proven_capture_recipe.md.
+# Requires ffmpeg installed (sudo apt install ffmpeg).
 #
-# Run this BEFORE pushing any C++ changes to atsc_equalizer_long /
-# atsc_viterbi_soft / atsc_fpll_tight / atsc_sync_tunable / atsc_fs_checker_inst
-# to make sure stock stays at ~60% and forks don't regress.
+# Metrics per combo:
+#   clean%   RS-decoded packets with TEI=0 and PID in KEEP set
+#   sd       Frames ffmpeg extracts from SD stream (-map 0:0, 720x480)
+#   hd       Frames ffmpeg extracts from HD stream (-map 0:2, 1920x1080)
+#
+# SD subchannels render at ~60% RS-clean; HD primary needs ~85%+.
 
 set -e
 
@@ -22,59 +25,98 @@ fi
 IQ="$1"
 SWEEP_DIR=$(mktemp -d)
 ROOT="$(dirname "$(dirname "$(readlink -f "$0")")")"
+SCRUB="$(dirname "$ROOT")/../ts_tei_scrub.py"  # ../../ts_tei_scrub.py from script dir
+[ ! -f "$SCRUB" ] && SCRUB="/mnt/c/Users/emane/Documents/SDR_Agent/ts_tei_scrub.py"
 
-echo "=== gr-atsc-plus 16-combo real-IQ sweep ==="
+echo "=== gr-atsc-plus combo sweep with SD+HD frame counts ==="
 echo "Input: $IQ ($(du -h "$IQ" | cut -f1))"
 echo "Sweep dir: $SWEEP_DIR"
 echo
 
-COMBOS=(
-    stock long_eq soft_vit long_eq_soft_vit
-    tight_fpll very_tight_fpll
-    hysteresis_sync force_emit_sync max_relax_sync
-    tight_fpll_long_eq tight_fpll_soft_vit
-    hysteresis_long_eq hysteresis_long_eq_soft_vit
-    tight_fpll_hysteresis full_stack full_stack_force_emit
-)
+# Discover all combo names from combos.yaml
+COMBOS=$(python3.12 -c "import yaml; print(' '.join(c['name'] for c in yaml.safe_load(open('$ROOT/combos.yaml'))['combos']))")
+echo "Combos to test: $(echo $COMBOS | wc -w)"
+echo
 
-for combo in "${COMBOS[@]}"; do
-    printf "  %-32s " "$combo"
-    python3.12 "$ROOT/run_combo.py" "$IQ" "$SWEEP_DIR/${combo}.ts" "$combo" 2>/dev/null
-    python3.12 - "$SWEEP_DIR/${combo}.ts" <<'PYEOF'
+count_frames() {
+    # Extract frames from a TS file at a given stream index. ffmpeg writes
+    # "frame=N" to stderr; the LAST one is the final count.
+    ffmpeg -nostdin -hide_banner -i "$1" -map "$2" -f null - 2>&1 \
+        | grep -oP 'frame=\s*\K\d+' | tail -1 | tr -d '\n' || echo "0"
+}
+
+score_combo() {
+    local combo=$1
+    local ts="$SWEEP_DIR/${combo}.ts"
+    local scrubbed="$SWEEP_DIR/${combo}_scr.ts"
+
+    # RS-clean %
+    local clean_line=$(python3.12 - "$ts" <<'PYEOF'
 import sys
 d = open(sys.argv[1], 'rb').read()
 n = len(d) // 188
 if n == 0:
-    print("FAIL (empty TS)")
+    print("0.0 0")
     sys.exit()
 KEEP = {0, 0x1FFB, 0x1FFF} | {p|s for p in range(0x30, 0x90, 0x10) for s in range(6)}
 c = sum(1 for i in range(n)
         if d[i*188] == 0x47
         and not ((d[i*188+1] >> 7) & 1)
         and (((d[i*188+1] & 0x1F) << 8) | d[i*188+2]) in KEEP)
-t = sum(1 for i in range(n) if d[i*188] == 0x47 and ((d[i*188+1] >> 7) & 1))
-print(f"clean={100*c/n:5.1f}%  tei={100*t/n:5.1f}%  pkts={n}")
+print(f"{100*c/n:.1f} {n}")
 PYEOF
+)
+    local clean_pct=$(echo $clean_line | cut -d' ' -f1)
+    local total=$(echo $clean_line | cut -d' ' -f2)
+
+    # Scrub TEI then count frames
+    if [ -f "$SCRUB" ]; then
+        python3 "$SCRUB" "$ts" "$scrubbed" 2>/dev/null >/dev/null || cp "$ts" "$scrubbed"
+    else
+        cp "$ts" "$scrubbed"
+    fi
+
+    local sd=$(count_frames "$scrubbed" "0:0")
+    local hd=$(count_frames "$scrubbed" "0:2")
+
+    printf "  %-32s clean=%5s%%  sd=%4s  hd=%4s  pkts=%s\n" "$combo" "$clean_pct" "${sd:-0}" "${hd:-0}" "$total"
+}
+
+for combo in $COMBOS; do
+    python3.12 "$ROOT/run_combo.py" "$IQ" "$SWEEP_DIR/${combo}.ts" "$combo" 2>/dev/null
+    score_combo "$combo"
 done
 
 echo
-echo "Done. Sorted leaderboard:"
+echo "Sorted leaderboard (HD frames desc, then SD, then clean%):"
 echo
 
-for combo in "${COMBOS[@]}"; do
-    python3.12 - "$SWEEP_DIR/${combo}.ts" "$combo" <<'PYEOF'
-import sys
-d = open(sys.argv[1], 'rb').read()
+for combo in $COMBOS; do
+    python3.12 - "$SWEEP_DIR/${combo}.ts" "$combo" "$SWEEP_DIR/${combo}_scr.ts" <<'PYEOF'
+import sys, subprocess
+ts, name, scrubbed = sys.argv[1], sys.argv[2], sys.argv[3]
+d = open(ts, 'rb').read()
 n = len(d) // 188
 if n == 0:
-    print(f"  0.0  {sys.argv[2]}")
+    print(f"0  0  0.0  {name}")
     sys.exit()
 KEEP = {0, 0x1FFB, 0x1FFF} | {p|s for p in range(0x30, 0x90, 0x10) for s in range(6)}
 c = sum(1 for i in range(n)
         if d[i*188] == 0x47
         and not ((d[i*188+1] >> 7) & 1)
         and (((d[i*188+1] & 0x1F) << 8) | d[i*188+2]) in KEEP)
-print(f"{100*c/n:6.1f}  {sys.argv[2]}")
+def frames(idx):
+    try:
+        out = subprocess.run(['ffmpeg', '-nostdin', '-hide_banner', '-i', scrubbed,
+                              '-map', idx, '-f', 'null', '-'],
+                             capture_output=True, text=True, timeout=120)
+        import re
+        m = re.findall(r'frame=\s*(\d+)', out.stderr)
+        return int(m[-1]) if m else 0
+    except Exception:
+        return 0
+hd = frames('0:2'); sd = frames('0:0')
+print(f"{hd:5d}  {sd:5d}  {100*c/n:5.1f}  {name}")
 PYEOF
 done | sort -rn
 
