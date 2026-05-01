@@ -1,7 +1,20 @@
-# gr-atsc-plus
+# Magic TV Decoder
 
-Open-source software ATSC 1.0 receiver, forked from GNU Radio's `gr-dtv`
-with experimental extensions and an empirically-tuned RF capture recipe.
+Open-source software ATSC 1.0 (broadcast HDTV) receiver. Pure software,
+runs on a laptop, decodes free over-the-air HD television from radio
+waves picked up by a $100 SDR and a horizontal antenna.
+
+The C++ heart is a fork of GNU Radio's `gr-dtv` plus 5 experimental
+blocks (called `gr-atscplus` for historical reasons — that's what the
+GNU Radio out-of-tree module is named on disk). The Python wrappers,
+recipe scripts, and live-streaming pipeline are this repo's own work.
+
+If the words **8-VSB**, **Hilbert transform**, **trellis-coded
+modulation**, **Reed-Solomon**, or **multipath equalizer** mean
+nothing to you yet but you want them to, jump straight to
+[`docs/science.md`](docs/science.md) — that's a long-form explainer of
+every signal-processing step, written for curious readers without an
+RF engineering background.
 
 > **Milestone:** software decode of a North-American UHF ATSC station at
 > visual quality matching a hardware HDHomeRun reference on the same RF
